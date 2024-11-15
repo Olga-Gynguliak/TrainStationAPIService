@@ -137,7 +137,7 @@ class JourneyListSerializer(JourneySerializer):
             "train",
             "departure_time",
             "arrival_time",
-            "route_distanse",
+            "route_distance",
             "crews",
             "seats_cargo_num_available",
             "seats_places_in_cargo_available",
