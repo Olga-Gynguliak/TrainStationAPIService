@@ -1,18 +1,19 @@
 from datetime import timedelta
-from email.policy import default
-from tkinter.font import names
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APITestCase
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from station.models import Station, Route, TrainType, Train, Crew, Journey
+from station.serializers import CrewSerializer
 
 Route_URL = reverse('station:route-list')
 Journey_URL = reverse('station:journey-list')
+Crew_URL = reverse('station:crew-list')
+
 
 class JourneyModelTests(TestCase):
     def setUp(self):
@@ -58,7 +59,7 @@ class JourneyModelTests(TestCase):
 class UnauthenticatedRouteApiTests(APITestCase):
     def test_auth_required(self):
         response = self.client.get(Route_URL)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class RouteApiAuthenticationTests(APITestCase):
@@ -103,3 +104,64 @@ class RouteApiAuthenticationTests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertTrue(any(route["id"] == expected_route.id for route in response.data))
 
+
+class UnauthenticatedRouteApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_requires_authentication(self):
+        response = self.client.get(Route_URL)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class UnauthenticatedJourneyApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_requires_authentication(self):
+        response = self.client.get(Journey_URL)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class CrewViewSetTests(APITestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+        self.admin_user = get_user_model().objects.create_superuser(
+            email="admin@example.com",
+            password="adminpassword"
+        )
+        self.regular_user = get_user_model().objects.create_user(
+            email="user@example.com",
+            password="userpassword"
+        )
+        self.crew = Crew.objects.create(first_name="John", last_name="Doe")
+
+    def test_list_crew_authenticated(self):
+        self.client.force_authenticate(self.regular_user)
+        response = self.client.get(Crew_URL)
+        print(response.status_code)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        if response.status_code == status.HTTP_200_OK:
+            crews = Crew.objects.all()
+            serializer = CrewSerializer(crews, many=True)
+            self.assertEqual(response.data, serializer.data)
+        else:
+            self.fail(f"Expected 200 response, but got {response.status_code}")
+
+    def test_create_crew_as_admin(self):
+        self.client.force_authenticate(self.admin_user)
+        payload = {"first_name": "John", "last_name": "Doe"}
+        response = self.client.post(Crew_URL, payload)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Crew.objects.count(), 2)
+        self.assertEqual(Crew.objects.last().first_name, "John")
+
+    def test_create_crew_as_regular_user(self):
+        self.client.force_authenticate(self.regular_user)
+        payload = {"first_name": "John", "last_name": "Doe"}
+        response = self.client.post(Crew_URL, payload)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(Crew.objects.count(), 1)
